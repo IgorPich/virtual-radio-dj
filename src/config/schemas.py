@@ -1,0 +1,75 @@
+"""Pydantic v2 configuration schemas for all subsystems."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AudioConfig(BaseModel):
+    """Volume-ducking parameters for the Spotify audio session."""
+
+    spotify_process_name: str = "Spotify.exe"
+    duck_target_volume: float = Field(0.25, ge=0.0, le=1.0)
+    duck_in_ms: int = Field(600, ge=50)
+    duck_out_ms: int = Field(900, ge=50)
+    tail_silence_ms: int = Field(300, ge=0)
+
+
+class LLMConfig(BaseModel):
+    """Settings for the local Ollama LLM endpoint."""
+
+    endpoint: str = "http://localhost:11434"
+    model: str = "mistral"
+    temperature: float = Field(0.8, ge=0.0, le=2.0)
+    timeout_sec: int = Field(60, ge=5)
+
+
+class TTSConfig(BaseModel):
+    """Text-to-speech provider selection and options."""
+
+    # Registered provider keys: "local_gtts" | "elevenlabs"
+    provider: str = "local_gtts"
+    language: str = "en"
+    slow: bool = False
+
+
+class SpotifyConfig(BaseModel):
+    """Spotify OAuth credentials and polling behaviour."""
+
+    client_id: str
+    client_secret: str
+    redirect_uri: str = "http://localhost:8888/callback"
+    poll_interval_sec: float = Field(1.0, ge=0.1)
+    trigger_before_end_sec: float = Field(20.0, ge=5.0)
+
+
+class ApiConfig(BaseModel):
+    """Flask stub server settings."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(5000, ge=1024, le=65535)
+
+
+class AppSettings(BaseSettings):
+    """
+    Root settings object loaded from environment variables and/or a .env file.
+
+    Nested models are populated via double-underscore prefixes, e.g.
+    ``AUDIO__DUCK_TARGET_VOLUME=0.3`` maps to ``settings.audio.duck_target_volume``.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    audio: AudioConfig = Field(default_factory=AudioConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    tts: TTSConfig = Field(default_factory=TTSConfig)
+    spotify: SpotifyConfig  # Required — no default; must be set in .env
+    api: ApiConfig = Field(default_factory=ApiConfig)
+    debug: bool = False
