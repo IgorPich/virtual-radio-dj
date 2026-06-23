@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Midnight Radio">
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="20%" r="82%">
+      <stop offset="0" stop-color="#25212b"/>
+      <stop offset="0.48" stop-color="#0b0a12"/>
+      <stop offset="1" stop-color="#030306"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="13" y1="12" x2="50" y2="53">
+      <stop offset="0" stop-color="#e7d3a4"/>
+      <stop offset="0.55" stop-color="#C5A059"/>
+      <stop offset="1" stop-color="#e03040"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect x="5" y="5" width="54" height="54" rx="11" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+  <circle cx="46" cy="18" r="5" fill="#e03040"/>
+  <circle cx="46" cy="18" r="10" fill="none" stroke="#e03040" stroke-opacity="0.35" stroke-width="2"/>
+  <path d="M15 43V22h6l7 10 7-10h6v21h-6V31l-6 8h-2l-6-8v12z" fill="url(#accent)"/>
+  <path d="M46 32c4 4 4 9 0 13M52 27c7 8 7 17 0 25" fill="none" stroke="#C5A059" stroke-linecap="round" stroke-width="3"/>
+</svg>

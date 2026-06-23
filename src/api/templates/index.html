@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#07070d">
+  <title>Midnight Radio</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="is-idle is-booting">
+
+  <!-- Ambilight background layer -->
+  <div id="ambilight" class="ambilight" aria-hidden="true">
+    <div class="ambilight-layer active" data-ambilight-layer="0"></div>
+    <div class="ambilight-layer" data-ambilight-layer="1"></div>
+  </div>
+  <div id="station-intro" class="station-intro" aria-hidden="true">
+    <div class="intro-signal">
+      <span class="intro-ring intro-ring-one"></span>
+      <span class="intro-ring intro-ring-two"></span>
+      <span class="intro-dot"></span>
+    </div>
+    <div class="intro-copy">
+      <span class="intro-status">SIGNAL ACQUIRING</span>
+      <span class="intro-brand">MIDNIGHT<span>RADIO</span></span>
+    </div>
+    <div class="intro-eq">
+      <span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- Header: Logo | Studio Clock | ON AIR Lamp | Settings -->
+    <header class="header">
+      <h1 class="logo">MIDNIGHT<span class="logo-accent">RADIO</span></h1>
+      <div class="studio-clock"><span id="clock">00:00:00</span></div>
+      <div class="header-right">
+        <div id="on-air" class="on-air-lamp off">
+          <div class="on-air-inner">
+            <span class="lamp-dot"></span>
+            <span class="lamp-label">ON AIR</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Broadcast Metadata Strip -->
+    <div class="broadcast-meta">
+      <span class="live-badge"><span class="live-pulse"></span>LIVE BROADCAST</span>
+      <span class="meta-sep">|</span>
+      <span class="signal-badge">SIGNAL: HQ</span>
+      <span class="meta-sep">|</span>
+      <span class="studio-badge">STUDIO A</span>
+    </div>
+    <div class="broadcast-ticker" aria-live="polite">
+      <span>FM 92.4</span>
+      <span>STEREO</span>
+      <span id="ticker-dj">AI DJ IDLE</span>
+      <span id="ticker-break">NEXT BREAK --:--</span>
+    </div>
+
+    <!-- Album Art (centered, large) -->
+    <section class="album-section">
+      <div id="album-art-wrap" class="album-art-wrap">
+        <img id="album-art" class="album-art" src="" alt="Album Art">
+        <div id="album-placeholder" class="album-placeholder">
+          <span>♫</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Track Info -->
+    <section class="track-info">
+      <h2 id="track-name" class="track-name">Waiting for Spotify…</h2>
+      <p id="track-artist" class="track-artist">&nbsp;</p>
+    </section>
+
+    <!-- DJ Booth (always visible) -->
+    <section id="teleprompter" class="dj-booth">
+      <div class="dj-booth-header">
+        <span class="label">DJ BOOTH</span>
+        <span id="mic-status" class="mic-status muted">● MIC MUTED</span>
+      </div>
+      <div id="monologue-text" class="monologue-text"><span class="mic-muted-placeholder">Hold tight. The DJ will speak shortly.</span></div>
+    </section>
+
+    <!-- Up Next -->
+    <section class="up-next">
+      <p class="label">UP NEXT</p>
+      <p id="next-track" class="next-track-text">—</p>
+    </section>
+
+    <!-- EQ Spectrum Analyzer + Status Row -->
+    <footer class="eq-footer">
+      <span id="dj-state" class="dj-state">IDLE</span>
+      <div id="eq-spectrum" class="eq-spectrum">
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+      </div>
+      <button id="spectrum-capture" class="spectrum-capture" type="button" aria-label="Enable audio spectrum capture">
+        <span class="spectrum-dot"></span>
+        <span id="spectrum-status">INPUT</span>
+      </button>
+      <span id="connection" class="connection disconnected">● disconnected</span>
+    </footer>
+
+  </div><!-- /.container -->
+
+  <section id="control-room" class="control-room reveal-section" aria-label="Broadcast controls and hourly news links">
+    <div class="control-room-inner">
+      <div class="control-room-heading">
+        <span class="section-kicker">CONTROL ROOM</span>
+        <h2>Broadcast Settings</h2>
+      </div>
+
+      <div class="control-room-grid">
+        <div class="control-panel settings-panel">
+          <div class="panel-title">Station Controls</div>
+          <div class="drawer-toggle-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">AI DJ</span>
+              <span class="toggle-desc">Enable live talk-over segments</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-dj">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="drawer-toggle-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">News</span>
+              <span class="toggle-desc">Top-of-hour RSS bulletin</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-news">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="drawer-toggle-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Duo Mode</span>
+              <span class="toggle-desc">Use the configured co-host voice</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-duo">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="drawer-toggle-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Imaging Bed</span>
+              <span class="toggle-desc">Play a background bed under speech</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-imaging">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="drawer-range-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">DJ Entry</span>
+              <span class="toggle-desc">Seconds before song end</span>
+            </div>
+            <input type="number" id="trigger-before-end" class="drawer-number" min="5" max="90" step="1">
+          </div>
+          <div class="drawer-range-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Visual Mode</span>
+              <span class="toggle-desc">Control studio animation intensity</span>
+            </div>
+            <select id="visual-mode" class="drawer-select" aria-label="Visual mode">
+              <option value="calm">Calm</option>
+              <option value="cinematic">Cinematic</option>
+              <option value="neon">Studio Neon</option>
+            </select>
+          </div>
+          <div class="drawer-toggle-row control-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Fake Commercials</span>
+              <span class="toggle-desc">Play absurd fictional radio ads after news</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggle-commercials">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="control-panel news-panel">
+          <div class="panel-title">Hourly News Links</div>
+          <div id="news-meta" class="news-meta">Loading latest articles...</div>
+          <div id="news-links" class="news-links" aria-live="polite"></div>
+          <button id="news-refresh" class="news-refresh" type="button">Refresh Links</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

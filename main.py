@@ -16,6 +16,7 @@ import signal
 import sys
 import threading
 
+from src.api.app import create_app
 from src.audio.ducker import AudioDucker, DuckingConfig
 from src.audio.windows_provider import WindowsAudioProvider
 from src.config.loader import load_settings
@@ -25,8 +26,10 @@ from src.llm.client import OllamaClient
 from src.llm.trivia_generator import TriviaGenerator
 from src.spotify.client import SpotifyClient
 from src.spotify.poller import SpotifyPoller
-from src.tts import create_tts_provider
+from src.config.modules import load_module_config
+from src.tts import create_cohost_tts_provider, create_tts_provider
 from src.utils.logger import configure_logging, get_logger
+from src.utils.piper_setup import run_piper_setup
 
 _logger = get_logger("main")
 
@@ -82,6 +85,10 @@ def _build_orchestrator(settings: AppSettings) -> tuple[RadioDJOrchestrator, Oll
 
     # ── TTS ───────────────────────────────────────────────────────────
     tts = create_tts_provider(settings.tts)
+    tts_cohost = create_cohost_tts_provider(settings.tts)
+
+    # ── Module config ─────────────────────────────────────────────────
+    module_config = load_module_config()
 
     # ── Orchestrator ──────────────────────────────────────────────────
     orchestrator = RadioDJOrchestrator(
@@ -89,7 +96,12 @@ def _build_orchestrator(settings: AppSettings) -> tuple[RadioDJOrchestrator, Oll
         ducker=ducker,
         trivia_generator=trivia,
         tts_provider=tts,
+        spotify_client=spotify_client,
         trigger_before_end_sec=settings.spotify.trigger_before_end_sec,
+        dj_config=settings.dj,
+        module_config=module_config,
+        tts_cohost=tts_cohost,
+        cohost_name=settings.tts.cohost_name,
     )
 
     return orchestrator, ollama
@@ -98,6 +110,25 @@ def _build_orchestrator(settings: AppSettings) -> tuple[RadioDJOrchestrator, Oll
 async def _async_main(settings: AppSettings) -> None:
     """Run the orchestrator inside the asyncio event loop with clean shutdown."""
     orchestrator, ollama = _build_orchestrator(settings)
+
+    # ── Start Flask web UI in a background daemon thread ──────────────
+    flask_app = create_app(orchestrator)
+    flask_thread = threading.Thread(
+        target=flask_app.run,
+        kwargs={
+            "host": settings.api.host,
+            "port": settings.api.port,
+            "use_reloader": False,
+            "threaded": True,
+        },
+        daemon=True,
+        name="flask-ui",
+    )
+    flask_thread.start()
+    _logger.info(
+        "Midnight Radio UI → http://%s:%d/",
+        settings.api.host, settings.api.port,
+    )
 
     # Register signal handlers for graceful exit via Ctrl+C / SIGTERM.
     loop = asyncio.get_running_loop()
@@ -133,6 +164,13 @@ async def _async_main(settings: AppSettings) -> None:
 
 def main() -> None:
     args = _parse_args()
+
+    # ── Piper auto-setup (runs before settings load so .env is ready) ─
+    # Looks for %USERPROFILE%/Downloads/piper/, stages files to piper_tts/,
+    # and patches .env with TTS__PROVIDER=piper and the correct paths.
+    # Safe to call on every startup — skips silently if already staged.
+    run_piper_setup(env_file=args.env)
+
     settings = load_settings(env_file=args.env)
     configure_logging(debug=args.debug or settings.debug)
 
@@ -143,6 +181,19 @@ def main() -> None:
         settings.llm.endpoint,
         settings.tts.provider,
         settings.audio.duck_target_volume * 100,
+    )
+    _logger.info(
+        "DJ interval: %d–%d songs | Skip grace: %.0fs",
+        settings.dj.song_interval_min,
+        settings.dj.song_interval_max,
+        settings.dj.skip_grace_period_sec,
+    )
+    _mc = load_module_config()
+    _logger.info(
+        "Modules: news=%s | duo=%s | imaging=%s",
+        _mc.top_of_hour_news_enabled,
+        _mc.duo_mode_enabled,
+        _mc.radio_imaging_enabled,
     )
 
     try:

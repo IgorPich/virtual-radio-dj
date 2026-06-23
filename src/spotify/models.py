@@ -14,6 +14,7 @@ class Track:
     artist: str
     duration_ms: int
     progress_ms: int
+    album_art_url: str = ""
 
     @property
     def remaining_ms(self) -> int:

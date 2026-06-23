@@ -11,7 +11,9 @@ import pytest
 from src.core.exceptions import AlreadyRunningError
 from src.core.orchestrator import RadioDJOrchestrator
 from src.core.state_manager import DJState
+from src.config.modules import ModuleConfig
 from src.llm.trivia_generator import TriviaGenerator
+from src.news.fetcher import NewsData
 from src.spotify.models import PlaybackState, Track
 
 
@@ -21,6 +23,8 @@ def orchestrator(
     audio_ducker,
     mock_ollama_client: AsyncMock,
     mock_tts_provider: AsyncMock,
+    mock_spotify_client: MagicMock,
+    module_config,
 ) -> RadioDJOrchestrator:
     trivia = TriviaGenerator(client=mock_ollama_client)
     with patch("src.core.orchestrator.pygame"):
@@ -29,7 +33,9 @@ def orchestrator(
             ducker=audio_ducker,
             trivia_generator=trivia,
             tts_provider=mock_tts_provider,
+            spotify_client=mock_spotify_client,
             trigger_before_end_sec=20.0,
+            module_config=module_config,
         )
     return orch
 
@@ -78,9 +84,9 @@ class TestRunInterruptErrorBranches:
         sample_track: Track,
         mock_ollama_client: AsyncMock,
     ) -> None:
-        """An unexpected exception in the pipeline should be caught and state reset to IDLE."""
+        """An unexpected exception in the prefetch pipeline should be caught and state reset to IDLE."""
         mock_ollama_client.generate.side_effect = RuntimeError("boom")
-        await orchestrator._run_interrupt(sample_track)
+        await orchestrator._run_prefetch(sample_track)
         assert orchestrator.dj_state == DJState.IDLE
 
     @pytest.mark.asyncio
@@ -90,10 +96,10 @@ class TestRunInterruptErrorBranches:
         sample_track: Track,
         mock_ollama_client: AsyncMock,
     ) -> None:
-        """CancelledError should propagate after cleanup."""
+        """CancelledError in the prefetch pipeline should propagate after cleanup."""
         mock_ollama_client.generate.side_effect = asyncio.CancelledError()
         with pytest.raises(asyncio.CancelledError):
-            await orchestrator._run_interrupt(sample_track)
+            await orchestrator._run_prefetch(sample_track)
         assert orchestrator.dj_state == DJState.IDLE
 
     @pytest.mark.asyncio
@@ -101,24 +107,77 @@ class TestRunInterruptErrorBranches:
         self,
         orchestrator: RadioDJOrchestrator,
         sample_track: Track,
-        mock_tts_provider: AsyncMock,
+        mock_spotify_client: MagicMock,
     ) -> None:
-        """The temp audio file should be deleted in the finally block."""
-        created_path: Path | None = None
+        """The pre-fetched audio file should be deleted in the finally block of _run_interrupt."""
+        import tempfile
 
-        async def fake_synth(text, path):
-            nonlocal created_path
-            path.touch()
-            created_path = path
-            return True
-
-        mock_tts_provider.synthesize.side_effect = fake_synth
+        # Create a real temp file and pre-load it as the cached audio.
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            audio_path = Path(tmp.name)
+        audio_path.touch()
+        orchestrator._prefetched_audio = audio_path
 
         with patch.object(orchestrator, "_play_with_ducking", new_callable=AsyncMock):
             await orchestrator._run_interrupt(sample_track)
 
-        assert created_path is not None
-        assert not created_path.exists()
+        assert not audio_path.exists()
+
+
+class TestNewsAndFakeCommercials:
+    @pytest.mark.asyncio
+    async def test_news_bulletin_runs_fake_commercial_after_success(
+        self,
+        orchestrator: RadioDJOrchestrator,
+        mock_ollama_client: AsyncMock,
+        mock_tts_provider: AsyncMock,
+        mock_spotify_client: MagicMock,
+    ) -> None:
+        orchestrator._module_config = ModuleConfig(
+            top_of_hour_news_enabled=True,
+            radio_imaging_enabled=False,
+            fake_commercials_enabled=True,
+        )
+        orchestrator._news_fetcher.fetch = MagicMock(
+            return_value=NewsData(
+                world="World headline.",
+                country="Poland headline.",
+                local="Warsaw headline.",
+                weather="",
+            )
+        )
+        mock_ollama_client.generate.side_effect = [
+            "Here is the news.",
+            "Try Panic Yogurt, the breakfast that screams back.",
+        ]
+
+        async def fake_synth(_text, path):
+            path.touch()
+            return True
+
+        mock_tts_provider.synthesize.side_effect = fake_synth
+
+        with patch.object(orchestrator, "_play_with_ducking", new_callable=AsyncMock) as mock_play:
+            await orchestrator._run_news_bulletin()
+
+        assert mock_ollama_client.generate.await_count == 2
+        assert mock_tts_provider.synthesize.await_count == 2
+        assert mock_play.await_count == 2
+        assert orchestrator._last_fake_commercial_hour is not None
+        mock_spotify_client.pause_playback.assert_called_once()
+        mock_spotify_client.resume_playback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fake_commercial_skips_when_disabled(
+        self,
+        orchestrator: RadioDJOrchestrator,
+        mock_ollama_client: AsyncMock,
+    ) -> None:
+        orchestrator._module_config = ModuleConfig(fake_commercials_enabled=False)
+
+        await orchestrator._run_fake_commercial_if_due(hour=9)
+
+        mock_ollama_client.generate.assert_not_awaited()
 
 
 class TestPlayWithDucking:
@@ -141,6 +200,37 @@ class TestPlayWithDucking:
                 mock_duck.return_value = True
                 await orchestrator._play_with_ducking(audio_path, 2.5)
                 mock_duck.assert_awaited_once_with(2.5)
+
+    @pytest.mark.asyncio
+    async def test_play_with_ducking_reveals_and_clears_text_on_audio_events(
+        self,
+        orchestrator: RadioDJOrchestrator,
+    ) -> None:
+        audio_path = Path("fake.mp3")
+
+        def fake_play(_path, on_play=None, on_end=None):
+            if on_play:
+                on_play()
+            if on_end:
+                on_end()
+
+        with (
+            patch.object(orchestrator, "_start_bed", return_value=None),
+            patch.object(orchestrator, "_stop_bed"),
+            patch.object(orchestrator, "_play_audio_sync", side_effect=fake_play),
+            patch.object(orchestrator, "_broadcast_event") as mock_broadcast,
+            patch.object(orchestrator._ducker, "duck_for", new_callable=AsyncMock) as mock_duck,
+        ):
+            mock_duck.return_value = True
+            await orchestrator._play_with_ducking(
+                audio_path, 1.0, display_text="Hello from the booth."
+            )
+
+        mock_broadcast.assert_any_call(
+            "monologue", {"text": "Hello from the booth."}
+        )
+        mock_broadcast.assert_any_call("monologue_clear", {})
+        assert orchestrator.last_monologue == ""
 
 
 class TestOnPlaybackChangeEdgeCases:

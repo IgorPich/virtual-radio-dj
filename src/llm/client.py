@@ -37,13 +37,19 @@ class OllamaClient:
     # Public API                                                           #
     # ------------------------------------------------------------------ #
 
-    async def generate(self, prompt: str, temperature: float | None = None) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
         """
         Send *prompt* to Ollama and return the generated text.
 
         Args:
             prompt:      Input prompt string.
             temperature: Override config temperature for this call.
+            max_tokens:  Optional Ollama ``num_predict`` output token limit.
 
         Returns:
             Generated text response (stripped of leading/trailing whitespace).
@@ -62,6 +68,8 @@ class OllamaClient:
                 "num_ctx": 2048,
             },
         }
+        if max_tokens is not None:
+            payload["options"]["num_predict"] = max_tokens
         _logger.debug("Sending inference request (model=%s).", self._config.model)
 
         try:

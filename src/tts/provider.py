@@ -15,6 +15,11 @@ class TTSProvider(ABC):
     injected without modifying orchestration logic.
     """
 
+    @property
+    def audio_suffix(self) -> str:
+        """File extension for the audio format produced by this provider."""
+        return ".mp3"
+
     @abstractmethod
     async def synthesize(self, text: str, output_path: Path) -> bool:
         """

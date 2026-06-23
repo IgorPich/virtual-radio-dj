@@ -30,6 +30,7 @@ class StateManager:
 
     def __init__(self) -> None:
         self._state = DJState.IDLE
+        self._on_transition: list = []
 
     @property
     def state(self) -> DJState:
@@ -40,6 +41,10 @@ class StateManager:
         """Return *True* if the DJ is doing anything other than idling."""
         return self._state != DJState.IDLE
 
+    def on_transition(self, callback) -> None:
+        """Register a callback ``(old_state, new_state) -> None``."""
+        self._on_transition.append(callback)
+
     def transition(self, new_state: DJState) -> None:
         """
         Move to *new_state* and log the change.
@@ -49,5 +54,11 @@ class StateManager:
         """
         if new_state == self._state:
             return
-        _logger.debug("DJ state: %s → %s", self._state.name, new_state.name)
+        old = self._state
+        _logger.debug("DJ state: %s → %s", old.name, new_state.name)
         self._state = new_state
+        for cb in self._on_transition:
+            try:
+                cb(old, new_state)
+            except Exception:
+                pass

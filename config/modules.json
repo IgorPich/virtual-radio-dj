@@ -1,0 +1,9 @@
+{
+  "dj_enabled": true,
+  "top_of_hour_news_enabled": true,
+  "duo_mode_enabled": false,
+  "radio_imaging_enabled": true,
+  "imaging_bed_paths": ["assets/bed.mp3"],
+  "imaging_bed_volume": 0.12,
+  "fake_commercials_enabled": false
+}

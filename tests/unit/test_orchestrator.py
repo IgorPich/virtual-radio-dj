@@ -43,6 +43,8 @@ class TestRadioDJOrchestrator:
         audio_ducker,
         mock_ollama_client: AsyncMock,
         mock_tts_provider: AsyncMock,
+        mock_spotify_client: MagicMock,
+        module_config,
     ) -> RadioDJOrchestrator:
         from src.llm.trivia_generator import TriviaGenerator
 
@@ -53,7 +55,9 @@ class TestRadioDJOrchestrator:
                 ducker=audio_ducker,
                 trivia_generator=trivia,
                 tts_provider=mock_tts_provider,
+                spotify_client=mock_spotify_client,
                 trigger_before_end_sec=20.0,
+                module_config=module_config,
             )
         return orch
 
@@ -80,30 +84,33 @@ class TestRadioDJOrchestrator:
         assert orchestrator.dj_state == DJState.IDLE
 
     @pytest.mark.asyncio
-    async def test_run_interrupt_generates_trivia_and_synthesizes(
+    async def test_run_prefetch_generates_trivia_and_synthesizes(
         self,
         orchestrator: RadioDJOrchestrator,
         sample_track: Track,
         mock_ollama_client: AsyncMock,
         mock_tts_provider: AsyncMock,
     ) -> None:
-        """Full interrupt pipeline should call LLM → TTS → ducker in sequence."""
-        # Make TTS write a fake file so the pipeline proceeds.
+        """Prefetch pipeline should call LLM → TTS and cache the audio path."""
         async def fake_synth(text, path):
             path.touch()
             return True
 
         mock_tts_provider.synthesize.side_effect = fake_synth
 
-        with patch.object(orchestrator, "_play_with_ducking", new_callable=AsyncMock):
-            await orchestrator._run_interrupt(sample_track)
+        await orchestrator._run_prefetch(sample_track)
 
         mock_ollama_client.generate.assert_awaited_once()
         mock_tts_provider.synthesize.assert_awaited_once()
+        assert orchestrator._prefetched_audio is not None
+        assert orchestrator._prefetched_audio.exists()
         assert orchestrator.dj_state == DJState.IDLE
+        # cleanup
+        if orchestrator._prefetched_audio:
+            orchestrator._prefetched_audio.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
-    async def test_run_interrupt_skips_on_empty_trivia(
+    async def test_run_prefetch_skips_on_empty_trivia(
         self,
         orchestrator: RadioDJOrchestrator,
         sample_track: Track,
@@ -111,20 +118,21 @@ class TestRadioDJOrchestrator:
         mock_tts_provider: AsyncMock,
     ) -> None:
         mock_ollama_client.generate.return_value = ""
-        await orchestrator._run_interrupt(sample_track)
+        await orchestrator._run_prefetch(sample_track)
 
         mock_tts_provider.synthesize.assert_not_awaited()
         assert orchestrator.dj_state == DJState.IDLE
 
     @pytest.mark.asyncio
-    async def test_run_interrupt_skips_on_tts_failure(
+    async def test_run_prefetch_skips_on_tts_failure(
         self,
         orchestrator: RadioDJOrchestrator,
         sample_track: Track,
         mock_tts_provider: AsyncMock,
     ) -> None:
         mock_tts_provider.synthesize.return_value = False
-        await orchestrator._run_interrupt(sample_track)
+        await orchestrator._run_prefetch(sample_track)
+        assert orchestrator._prefetched_audio is None
         assert orchestrator.dj_state == DJState.IDLE
 
     @pytest.mark.asyncio

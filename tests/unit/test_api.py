@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
@@ -19,6 +20,34 @@ def mock_orchestrator() -> MagicMock:
     orch = MagicMock(spec=RadioDJOrchestrator)
     type(orch).dj_state = PropertyMock(return_value=DJState.IDLE)
     type(orch).current_track = PropertyMock(return_value=None)
+    type(orch).next_track = PropertyMock(return_value=None)
+    type(orch).last_monologue = PropertyMock(return_value="")
+    type(orch).runtime_settings = PropertyMock(
+        return_value={
+            "dj_enabled": True,
+            "top_of_hour_news_enabled": True,
+            "duo_mode_enabled": False,
+            "radio_imaging_enabled": True,
+            "fake_commercials_enabled": False,
+            "trigger_before_end_sec": 20.0,
+        }
+    )
+    orch.latest_news_links.return_value = {
+        "updated_at": "2026-05-05T20:00:00",
+        "hour": "20:00",
+        "articles": [
+            {
+                "title": "World headline",
+                "url": "https://example.com/world",
+                "source": "Example News",
+                "category": "world",
+            }
+        ],
+    }
+    orch.update_runtime_settings.side_effect = lambda updates: {
+        **orch.runtime_settings,
+        **updates,
+    }
     return orch
 
 
@@ -57,11 +86,62 @@ class TestStatusEndpoint:
         assert data["current_track"]["remaining_sec"] == 15.0
 
 
-class TestStubEndpoints:
-    def test_pause_returns_501(self, client: FlaskClient) -> None:
-        resp = client.post("/api/pause")
-        assert resp.status_code == 501
+class TestSettingsEndpoints:
+    def test_get_settings(self, client: FlaskClient) -> None:
+        resp = client.get("/api/settings")
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["dj_enabled"] is True
+        assert data["duo_mode_enabled"] is False
+        assert data["fake_commercials_enabled"] is False
+        assert "quizzes_enabled" not in data
+        assert "shoutouts_enabled" not in data
+        assert data["trigger_before_end_sec"] == 20.0
 
-    def test_resume_returns_501(self, client: FlaskClient) -> None:
+    def test_patch_settings(self, mock_orchestrator: MagicMock, client: FlaskClient) -> None:
+        resp = client.patch("/api/settings", json={"dj_enabled": False})
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["dj_enabled"] is False
+        mock_orchestrator.update_runtime_settings.assert_called_with({"dj_enabled": False})
+
+    def test_pause_disables_dj(self, client: FlaskClient) -> None:
+        resp = client.post("/api/pause")
+        assert resp.status_code == 200
+        assert resp.get_json()["dj_enabled"] is False
+
+    def test_resume_enables_dj(self, client: FlaskClient) -> None:
         resp = client.post("/api/resume")
-        assert resp.status_code == 501
+        assert resp.status_code == 200
+        assert resp.get_json()["dj_enabled"] is True
+
+
+class TestNewsEndpoint:
+    def test_latest_news_links(self, client: FlaskClient) -> None:
+        resp = client.get("/api/news/latest")
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["hour"] == "20:00"
+        assert data["articles"][0]["title"] == "World headline"
+        assert data["articles"][0]["category"] == "world"
+
+
+class TestSettingsUi:
+    def test_control_room_has_fake_commercials_without_removed_features(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        html = (root / "src" / "api" / "templates" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        js = (root / "src" / "api" / "static" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        assert "Fake Commercials" in html
+        assert "control-room" in html
+        assert "settings-btn" not in html
+        assert "toggle-commercials" in html
+        assert "fake_commercials_enabled" in js
+        assert "toggle-quizzes" not in html
+        assert "toggle-shoutouts" not in html
+        assert "quizzes_enabled" not in js
+        assert "shoutouts_enabled" not in js

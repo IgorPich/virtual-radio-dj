@@ -28,10 +28,25 @@ class LLMConfig(BaseModel):
 class TTSConfig(BaseModel):
     """Text-to-speech provider selection and options."""
 
-    # Registered provider keys: "local_gtts" | "elevenlabs"
+    # Registered provider keys: "local_gtts" | "elevenlabs" | "piper"
     provider: str = "local_gtts"
     language: str = "en"
     slow: bool = False
+
+    # ElevenLabs-specific settings (only used when provider="elevenlabs")
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
+    elevenlabs_model: str = "eleven_turbo_v2_5"
+
+    # Piper-specific settings (only used when provider="piper")
+    piper_model_path: str = ""
+    piper_model_name: str = "en_US-ryan-high"
+    piper_exe_path: str = ""
+    piper_speaker_id: int | None = None
+
+    # Duo-mode co-host voice (only used when duo_mode_enabled and provider="piper")
+    piper_model_path_cohost: str = ""
+    cohost_name: str = "Emma"
 
 
 class SpotifyConfig(BaseModel):
@@ -42,6 +57,14 @@ class SpotifyConfig(BaseModel):
     redirect_uri: str = "http://localhost:8888/callback"
     poll_interval_sec: float = Field(1.0, ge=0.1)
     trigger_before_end_sec: float = Field(20.0, ge=5.0)
+
+
+class DJConfig(BaseModel):
+    """DJ behaviour tuning — frequency, skip handling."""
+
+    song_interval_min: int = Field(2, ge=1)
+    song_interval_max: int = Field(4, ge=1)
+    skip_grace_period_sec: float = Field(60.0, ge=5.0)
 
 
 class ApiConfig(BaseModel):
@@ -71,5 +94,6 @@ class AppSettings(BaseSettings):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     spotify: SpotifyConfig  # Required — no default; must be set in .env
+    dj: DJConfig = Field(default_factory=DJConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     debug: bool = False

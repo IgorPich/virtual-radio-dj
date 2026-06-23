@@ -43,3 +43,8 @@ Thumbs.db
 
 # Ollama / model cache
 models/
+
+# Large ML model files
+*.onnx
+*.ort
+piper_tts/espeak-ng-data/

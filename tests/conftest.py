@@ -22,6 +22,7 @@ from src.llm.trivia_generator import TriviaGenerator
 from src.spotify.client import SpotifyClient
 from src.spotify.models import PlaybackState, Track
 from src.spotify.poller import SpotifyPoller
+from src.config.modules import ModuleConfig
 from src.tts.provider import TTSProvider
 
 
@@ -88,6 +89,7 @@ def mock_tts_provider() -> AsyncMock:
     tts = AsyncMock(spec=TTSProvider)
     tts.synthesize.return_value = True
     tts.estimate_duration.return_value = 3.0
+    tts.audio_suffix = ".mp3"
     return tts
 
 
@@ -122,6 +124,21 @@ def mock_spotify_client() -> MagicMock:
             progress_ms=340_000,
         ),
     )
+    client.get_next_in_queue.return_value = Track(
+        id="track_2",
+        name="Under Pressure",
+        artist="Queen",
+        duration_ms=248_000,
+        progress_ms=0,
+    )
+    client.get_artist_info.return_value = {
+        "genres": ["rock", "classic rock"],
+        "popularity": 82,
+        "followers": 25_000_000,
+    }
+    client.pause_playback.return_value = True
+    client.skip_to_next.return_value = True
+    client.resume_playback.return_value = True
     return client
 
 
@@ -164,3 +181,13 @@ def sample_track() -> Track:
 @pytest.fixture()
 def sample_playback_state(sample_track: Track) -> PlaybackState:
     return PlaybackState(is_playing=True, current_track=sample_track)
+
+
+@pytest.fixture()
+def module_config() -> ModuleConfig:
+    """Module config with all optional features disabled for test isolation."""
+    return ModuleConfig(
+        top_of_hour_news_enabled=False,
+        duo_mode_enabled=False,
+        radio_imaging_enabled=False,
+    )

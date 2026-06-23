@@ -8,6 +8,7 @@ flask>=3.0.0
 gtts>=2.5.1
 pygame>=2.5.2
 comtypes>=1.4.1
+feedparser>=6.0.11
 
 # Async support
 anyio>=4.4.0

@@ -36,6 +36,19 @@ class TestOllamaClient:
         mock_post.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_generate_passes_max_tokens_to_ollama(
+        self, llm_client: OllamaClient
+    ) -> None:
+        mock_response = httpx.Response(200, json=GENERATE_SUCCESS, request=_FAKE_REQUEST)
+
+        with patch.object(llm_client._http, "post", new_callable=AsyncMock) as mock_post:
+            mock_post.return_value = mock_response
+            await llm_client.generate("Tell me more", max_tokens=320)
+
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["options"]["num_predict"] == 320
+
+    @pytest.mark.asyncio
     async def test_generate_connection_error(self, llm_client: OllamaClient) -> None:
         with patch.object(llm_client._http, "post", new_callable=AsyncMock) as mock_post:
             mock_post.side_effect = httpx.ConnectError("Connection refused")

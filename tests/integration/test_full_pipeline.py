@@ -24,6 +24,8 @@ def fast_orchestrator(
     mock_audio_provider: MagicMock,
     mock_ollama_client: AsyncMock,
     mock_tts_provider: AsyncMock,
+    mock_spotify_client: MagicMock,
+    module_config,
 ) -> RadioDJOrchestrator:
     """
     Orchestrator wired to fast mocks for integration testing.
@@ -50,7 +52,9 @@ def fast_orchestrator(
             ducker=ducker,
             trivia_generator=trivia,
             tts_provider=mock_tts_provider,
+            spotify_client=mock_spotify_client,
             trigger_before_end_sec=20.0,
+            module_config=module_config,
         )
     return orch
 
@@ -66,8 +70,8 @@ class TestFullPipeline:
         mock_audio_provider: MagicMock,
     ) -> None:
         """
-        Simulate a track nearing its end and verify the full pipeline:
-        LLM generate → TTS synthesize → duck → play → unduck.
+        Simulate a track nearing its end and verify the full prefetch pipeline:
+        LLM generate → TTS synthesize → audio cached.
         """
         track = Track("t1", "Song", "Artist", 300_000, 285_000)
 
@@ -76,12 +80,8 @@ class TestFullPipeline:
             return True
 
         mock_tts_provider.synthesize.side_effect = fake_synth
-        mock_tts_provider.estimate_duration.return_value = 0.05
 
-        with patch.object(
-            fast_orchestrator, "_play_with_ducking", new_callable=AsyncMock
-        ):
-            await fast_orchestrator._run_interrupt(track)
+        await fast_orchestrator._run_prefetch(track)
 
         # LLM was called.
         mock_ollama_client.generate.assert_awaited_once()
@@ -89,8 +89,15 @@ class TestFullPipeline:
         # TTS was called.
         mock_tts_provider.synthesize.assert_awaited_once()
 
+        # Audio was cached.
+        assert fast_orchestrator._prefetched_audio is not None
+
         # State should be back to IDLE.
         assert fast_orchestrator.dj_state == DJState.IDLE
+
+        # cleanup
+        if fast_orchestrator._prefetched_audio:
+            fast_orchestrator._prefetched_audio.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
     async def test_playback_state_change_triggers_interrupt(
@@ -100,11 +107,16 @@ class TestFullPipeline:
         """When a track has ≤ trigger_before_end_sec remaining, interrupt fires."""
         track = Track("t1", "Song", "Artist", 300_000, 290_000)  # 10s remaining
         state = PlaybackState(is_playing=True, current_track=track)
+        fast_orchestrator._songs_since_last_dj = fast_orchestrator._next_dj_at
 
         with patch.object(
             fast_orchestrator, "_maybe_trigger_interrupt", new_callable=AsyncMock
         ) as mock_trigger:
             await fast_orchestrator._on_playback_change(state, None)
+            # First observation goes through _schedule_end_trigger which
+            # creates an asyncio task when inside the trigger window.
+            # Give the task a chance to run.
+            await asyncio.sleep(0)
             mock_trigger.assert_awaited_once_with(track)
 
     @pytest.mark.asyncio
